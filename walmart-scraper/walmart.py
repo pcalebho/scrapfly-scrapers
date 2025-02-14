@@ -32,15 +32,12 @@ def parse_product(response: ScrapeApiResponse):
     _product_raw = data["props"]["pageProps"]["initialData"]["data"]["product"]
     # There's a lot of product data, including private meta keywords, so we need to do some filtering:
     wanted_product_keys = [
-        "availabilityStatus",
         "averageRating",
         "brand",
         "id",
         "imageInfo",
         "manufacturerName",
         "name",
-        "orderLimit",
-        "orderMinLimit",
         "priceInfo",
         "shortDescription",
         "type",
@@ -50,14 +47,42 @@ def parse_product(response: ScrapeApiResponse):
     return {"product": product, "reviews": reviews_raw}
 
 
-def parse_search(response: ScrapeApiResponse) -> List[Dict]:
-    """parse product listing data from search pages"""
+def parse_search(response: ScrapeApiResponse) -> Dict:
+    """parse refined product listing data from search pages"""
     sel = response.selector
     data = sel.xpath('//script[@id="__NEXT_DATA__"]/text()').get()
     data = json.loads(data)
-    total_results = data["props"]["pageProps"]["initialData"]["searchResult"]["itemStacks"][0]["count"]
-    results = data["props"]["pageProps"]["initialData"]["searchResult"]["itemStacks"][0]["items"]
-    return {"results": results, "total_results": total_results}
+
+    # Check if there are any item stacks before accessing them
+    item_stacks = data["props"]["pageProps"]["initialData"].get("searchResult", {}).get("itemStacks", [])
+    if not item_stacks:
+        return {"results": [], "total_results": 0}
+
+    total_results = item_stacks[0].get("count", 0)
+    results = item_stacks[0].get("items", [])
+
+    # Define the keys we want to keep for each product
+    wanted_search_keys = [
+        "id",
+        "usItemId",
+        "name",
+        "type",
+        "imageInfo",
+        "canonicalUrl",
+        "salesUnitType",
+        "sellerId",
+        "sellerName",
+        "averageRating",
+        "numberOfReviews"
+    ]
+
+    # Filter each product to only include the desired keys
+    refined_results = []
+    for item in results:
+        refined_item = {k: v for k, v in item.items() if k in wanted_search_keys}
+        refined_results.append(refined_item)
+
+    return {"results": refined_results, "total_results": total_results}
 
 
 async def scrape_products(urls: List[str]) -> List[Dict]:
@@ -102,12 +127,13 @@ async def scrape_search(
     total_results = data["total_results"]
 
     # find total page count to scrape
-    total_pages = math.ceil(total_results / 40)
-    # walmart sets the max search results to 25 pages
-    if total_pages > 25:
-        total_pages = 25
-    if max_pages and max_pages < total_pages:
-        total_pages = max_pages
+    total_pages = math.ceil(total_results / 40) if total_results else 0
+    total_pages = min(total_pages, 25)  # Walmart's limit
+    if max_pages:
+        total_pages = min(max_pages, total_pages)
+
+    if total_pages <= 1:
+        return search_data
 
     # then add the remaining pages to a scraping list and scrape them concurrently
     log.info(f"scraping search pagination, remaining ({total_pages - 1}) more pages")
