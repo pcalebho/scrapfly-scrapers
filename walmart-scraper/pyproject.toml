@@ -5,6 +5,7 @@ description = "demo web scraper for Walmart.com using Scrapfly"
 authors = ["Bernardas Alisauskas <bernardas@scrapfly.io>",
            "Mazen Ramadan <mazen@scrapfly.io>"]
 license = "NPOS-3.0"
+package-mode = false
 readme = "README.md"
 
 [tool.poetry.dependencies]
